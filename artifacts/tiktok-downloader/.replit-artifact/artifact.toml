@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "TikTok HD Downloader"
+version = "1.0.0"
+id = "artifacts/tiktok-downloader"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19463
+
+[services.development]
+run = "pnpm --filter @workspace/tiktok-downloader run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tiktok-downloader", "run", "build" ]
+publicDir = "artifacts/tiktok-downloader/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19463"
+BASE_PATH = "/"

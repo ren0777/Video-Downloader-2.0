@@ -5,14 +5,6 @@
  * TikTok HD Downloader API
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
-
-export interface TiktokInput {
-  /** TikTok video URL */
-  url: string;
-}
 
 export interface TiktokVideo {
   id: string;
@@ -28,8 +20,3 @@ export interface TiktokVideo {
   comments: number;
   shares: number;
 }
-
-export interface ErrorResponse {
-  error: string;
-}
-

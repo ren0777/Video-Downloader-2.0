@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: TikTok HD Downloader API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: tiktok
+    description: TikTok video operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /tiktok/download:
+    post:
+      operationId: downloadTiktok
+      tags: [tiktok]
+      summary: Download TikTok video
+      description: Fetches TikTok video info and watermark-free download URL from the given link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TiktokInput"
+      responses:
+        "200":
+          description: Video info and download URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TiktokVideo"
+        "400":
+          description: Invalid URL or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to fetch video
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +69,56 @@ components:
       required:
         - status
 
+    TiktokInput:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: TikTok video URL
+
+    TiktokVideo:
+      type: object
+      required:
+        - id
+        - title
+        - author
+        - authorAvatar
+        - cover
+        - downloadUrl
+        - duration
+        - likes
+        - comments
+        - shares
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
+        authorAvatar:
+          type: string
+        cover:
+          type: string
+        downloadUrl:
+          type: string
+          description: Watermark-free HD download URL
+        duration:
+          type: integer
+          description: Duration in seconds
+        likes:
+          type: integer
+        comments:
+          type: integer
+        shares:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
