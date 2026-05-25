@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import ytdl from "@distube/ytdl-core";
 import { DownloadVideoBody, DownloadVideoResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -32,7 +33,7 @@ async function fetchTiktok(url: string) {
     body: formData.toString(),
   });
 
-  if (!response.ok) throw new Error("tikwm API error");
+  if (!response.ok) throw new Error("Failed to reach TikTok download service");
 
   const data = (await response.json()) as {
     code: number;
@@ -52,7 +53,7 @@ async function fetchTiktok(url: string) {
   };
 
   if (data.code !== 0 || !data.data) {
-    throw new Error(data.msg || "Could not process this TikTok URL");
+    throw new Error(data.msg || "Could not process this TikTok URL. Make sure the video is public.");
   }
 
   const v = data.data;
@@ -60,80 +61,38 @@ async function fetchTiktok(url: string) {
     id: v.id,
     title: v.title || "TikTok Video",
     author: v.author?.nickname || "Unknown",
-    authorAvatar: v.author?.avatar || null,
-    cover: v.cover || null,
+    authorAvatar: v.author?.avatar ?? null,
+    cover: v.cover ?? null,
     downloadUrl: v.hdplay || v.play || "",
     duration: v.duration || 0,
     platform: "tiktok" as Platform,
-    likes: v.digg_count || 0,
-    comments: v.comment_count || 0,
-    shares: v.share_count || 0,
+    likes: v.digg_count ?? null,
+    comments: v.comment_count ?? null,
+    shares: v.share_count ?? null,
   };
 }
 
-async function fetchViaCobalt(url: string, platform: Platform) {
-  const cobaltResponse = await fetch("https://api.cobalt.tools/", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      url,
-      videoQuality: "max",
-      filenameStyle: "pretty",
-    }),
+async function fetchYoutube(url: string) {
+  const info = await ytdl.getInfo(url);
+  const details = info.videoDetails;
+
+  const format = ytdl.chooseFormat(info.formats, {
+    quality: "highestvideo",
+    filter: "videoandaudio",
   });
 
-  if (!cobaltResponse.ok) {
-    const text = await cobaltResponse.text();
-    throw new Error(`Cobalt API error ${cobaltResponse.status}: ${text.slice(0, 200)}`);
-  }
-
-  const cobalt = (await cobaltResponse.json()) as {
-    status: string;
-    url?: string;
-    error?: { code?: string };
-  };
-
-  if (!cobalt.url) {
-    throw new Error(cobalt.error?.code || "Could not extract download URL");
-  }
-
-  let title = "Video";
-  let cover: string | null = null;
-  let author = "Unknown";
-  let duration = 0;
-
-  if (platform === "youtube") {
-    try {
-      const oembed = await fetch(
-        `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`
-      );
-      if (oembed.ok) {
-        const meta = (await oembed.json()) as {
-          title?: string;
-          author_name?: string;
-          thumbnail_url?: string;
-        };
-        title = meta.title || title;
-        author = meta.author_name || author;
-        cover = meta.thumbnail_url || null;
-      }
-    } catch {
-      // metadata is best-effort
-    }
-  }
+  const cover =
+    details.thumbnails?.sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url ?? null;
 
   return {
-    id: generateId(url),
-    title,
-    author,
+    id: details.videoId,
+    title: details.title || "YouTube Video",
+    author: details.author?.name || "Unknown",
     authorAvatar: null,
     cover,
-    downloadUrl: cobalt.url,
-    duration,
-    platform,
+    downloadUrl: format?.url || "",
+    duration: parseInt(details.lengthSeconds, 10) || 0,
+    platform: "youtube" as Platform,
     likes: null,
     comments: null,
     shares: null,
@@ -152,16 +111,22 @@ router.post("/video/download", async (req, res): Promise<void> => {
 
   if (!platform) {
     res.status(400).json({
-      error: "Unsupported platform. Please use a TikTok, YouTube, Instagram, or Facebook link.",
+      error:
+        "Unsupported platform. Please paste a link from TikTok or YouTube.",
+    });
+    return;
+  }
+
+  if (platform === "instagram" || platform === "facebook") {
+    res.status(400).json({
+      error: `${platform === "instagram" ? "Instagram" : "Facebook"} downloads are not supported yet. Try TikTok or YouTube.`,
     });
     return;
   }
 
   try {
     const videoData =
-      platform === "tiktok"
-        ? await fetchTiktok(url)
-        : await fetchViaCobalt(url, platform);
+      platform === "tiktok" ? await fetchTiktok(url) : await fetchYoutube(url);
 
     res.json(DownloadVideoResponse.parse(videoData));
   } catch (err) {
