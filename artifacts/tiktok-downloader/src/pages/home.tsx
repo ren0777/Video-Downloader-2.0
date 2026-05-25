@@ -88,9 +88,13 @@ export default function Home() {
           addToHistory(data);
         },
         onError: (error: any) => {
+          const message =
+            error?.data?.error ||
+            error?.message ||
+            "Failed to fetch video details. Please try again.";
           toast({
             title: "Download Failed",
-            description: error?.response?.data?.error || "Failed to fetch video details. Please try again.",
+            description: message,
             variant: "destructive",
           });
         },
