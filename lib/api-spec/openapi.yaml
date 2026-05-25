@@ -3,15 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: TikTok HD Downloader API
+  description: Multi-platform HD Video Downloader API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
-  - name: tiktok
-    description: TikTok video operations
+  - name: video
+    description: Video download operations
 paths:
   /healthz:
     get:
@@ -27,27 +27,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
-  /tiktok/download:
+  /video/download:
     post:
-      operationId: downloadTiktok
-      tags: [tiktok]
-      summary: Download TikTok video
-      description: Fetches TikTok video info and watermark-free download URL from the given link
+      operationId: downloadVideo
+      tags: [video]
+      summary: Download video
+      description: Fetches video info and watermark-free HD download URL from a supported platform link (TikTok, YouTube, Instagram, Facebook)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/TiktokInput"
+              $ref: "#/components/schemas/VideoInput"
       responses:
         "200":
           description: Video info and download URL
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TiktokVideo"
+                $ref: "#/components/schemas/VideoResult"
         "400":
-          description: Invalid URL or missing fields
+          description: Invalid URL or unsupported platform
           content:
             application/json:
               schema:
@@ -69,28 +69,25 @@ components:
       required:
         - status
 
-    TiktokInput:
+    VideoInput:
       type: object
       required:
         - url
       properties:
         url:
           type: string
-          description: TikTok video URL
+          description: Video URL (TikTok, YouTube, Instagram, or Facebook)
 
-    TiktokVideo:
+    VideoResult:
       type: object
       required:
         - id
         - title
         - author
-        - authorAvatar
         - cover
         - downloadUrl
         - duration
-        - likes
-        - comments
-        - shares
+        - platform
       properties:
         id:
           type: string
@@ -100,20 +97,28 @@ components:
           type: string
         authorAvatar:
           type: string
+          nullable: true
         cover:
           type: string
+          nullable: true
         downloadUrl:
           type: string
           description: Watermark-free HD download URL
         duration:
           type: integer
           description: Duration in seconds
+        platform:
+          type: string
+          enum: [tiktok, youtube, instagram, facebook]
         likes:
           type: integer
+          nullable: true
         comments:
           type: integer
+          nullable: true
         shares:
           type: integer
+          nullable: true
 
     ErrorResponse:
       type: object

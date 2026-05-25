@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { useDownloadTiktok } from "@workspace/api-client-react";
-import type { TiktokVideo } from "@workspace/api-client-react/src/generated/api.schemas";
+import { useDownloadVideo } from "@workspace/api-client-react";
+import type { VideoResult } from "@workspace/api-client-react/src/generated/api.schemas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Download, Search, RefreshCw, PlayCircle, Heart, MessageCircle, Share2, Clock, Trash2 } from "lucide-react";
+import { Loader2, Download, Search, RefreshCw, PlayCircle, Heart, MessageCircle, Share2, Clock, Trash2, Image as ImageIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -12,12 +12,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 const formSchema = z.object({
-  url: z.string().url("Please enter a valid URL").includes("tiktok.com", { message: "Must be a TikTok URL" }),
+  url: z.string().url("Please enter a valid URL").refine(
+    (val) => ["tiktok.com", "youtube.com", "youtu.be", "instagram.com", "facebook.com", "fb.watch", "vm.tiktok.com"].some(d => val.includes(d)),
+    { message: "Please paste a TikTok, YouTube, Instagram, or Facebook link" }
+  ),
 });
 
-function formatNumber(num: number): string {
+function formatNumber(num: number | null | undefined): string {
+  if (num === null || num === undefined) return "0";
   if (num >= 1000000) {
     return (num / 1000000).toFixed(1) + "M";
   }
@@ -34,11 +40,11 @@ function formatDuration(seconds: number): string {
 }
 
 export default function Home() {
-  const [result, setResult] = useState<TiktokVideo | null>(null);
-  const [history, setHistory] = useState<TiktokVideo[]>([]);
+  const [result, setResult] = useState<VideoResult | null>(null);
+  const [history, setHistory] = useState<VideoResult[]>([]);
   const { toast } = useToast();
 
-  const downloadMutation = useDownloadTiktok();
+  const downloadMutation = useDownloadVideo();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -49,7 +55,7 @@ export default function Home() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("tiksave_history");
+      const stored = localStorage.getItem("vidsave_history");
       if (stored) {
         setHistory(JSON.parse(stored));
       }
@@ -58,18 +64,18 @@ export default function Home() {
     }
   }, []);
 
-  const addToHistory = (video: TiktokVideo) => {
+  const addToHistory = (video: VideoResult) => {
     setHistory((prev) => {
       const filtered = prev.filter((v) => v.id !== video.id);
       const updated = [video, ...filtered].slice(0, 5);
-      localStorage.setItem("tiksave_history", JSON.stringify(updated));
+      localStorage.setItem("vidsave_history", JSON.stringify(updated));
       return updated;
     });
   };
 
   const clearHistory = () => {
     setHistory([]);
-    localStorage.removeItem("tiksave_history");
+    localStorage.removeItem("vidsave_history");
   };
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
@@ -97,7 +103,7 @@ export default function Home() {
     form.reset();
   };
 
-  const handleDownload = (video: TiktokVideo) => {
+  const handleDownload = (video: VideoResult) => {
     window.open(video.downloadUrl, "_blank");
   };
 
@@ -111,10 +117,10 @@ export default function Home() {
             <PlayCircle className="w-8 h-8 text-primary" />
           </div>
           <h1 className="text-5xl font-extrabold tracking-tight lg:text-6xl">
-            Tik<span className="text-primary">Save</span>
+            Vid<span className="text-primary">Save</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            Download TikTok videos in high definition without watermarks. Fast, free, and secure.
+            Download videos from TikTok, YouTube, Instagram, and Facebook in HD. No watermarks. Free.
           </p>
         </div>
 
@@ -134,7 +140,7 @@ export default function Home() {
                         <FormItem className="w-full">
                           <FormControl>
                             <Input 
-                              placeholder="Paste TikTok link here..." 
+                              placeholder="Paste a TikTok, YouTube, Instagram, or Facebook link..." 
                               className="w-full pl-12 pr-32 py-8 text-lg bg-transparent border-none shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/50 rounded-xl"
                               autoComplete="off"
                               {...field} 
@@ -178,13 +184,19 @@ export default function Home() {
           <div className="animate-in fade-in slide-in-from-bottom-8 duration-500">
             <Card className="border-border shadow-2xl overflow-hidden bg-card/80 backdrop-blur-xl">
               <div className="md:flex">
-                <div className="md:w-2/5 relative bg-black/50 aspect-[9/16] md:aspect-auto">
-                  <img 
-                    src={result.cover} 
-                    alt={result.title} 
-                    className="w-full h-full object-cover opacity-80"
-                    data-testid="img-cover"
-                  />
+                <div className="md:w-2/5 relative bg-black/50 aspect-[9/16] md:aspect-auto flex items-center justify-center">
+                  {result.cover ? (
+                    <img 
+                      src={result.cover} 
+                      alt={result.title} 
+                      className="w-full h-full object-cover opacity-80"
+                      data-testid="img-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-zinc-900 flex items-center justify-center opacity-80">
+                      <ImageIcon className="w-12 h-12 text-zinc-700" />
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent" />
                   <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
                     <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10">
@@ -197,12 +209,26 @@ export default function Home() {
                 <div className="md:w-3/5 p-6 md:p-8 flex flex-col">
                   <div className="flex items-center gap-4 mb-6">
                     <Avatar className="h-12 w-12 border-2 border-primary/20">
-                      <AvatarImage src={result.authorAvatar} />
+                      {result.authorAvatar && <AvatarImage src={result.authorAvatar} />}
                       <AvatarFallback className="bg-primary/20 text-primary">{result.author.substring(0,2).toUpperCase()}</AvatarFallback>
                     </Avatar>
-                    <div>
+                    <div className="flex-1">
                       <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider">Creator</p>
-                      <p className="text-lg font-bold text-foreground" data-testid="text-author">@{result.author}</p>
+                      <div className="flex items-center flex-wrap gap-2">
+                        <p className="text-lg font-bold text-foreground" data-testid="text-author">@{result.author}</p>
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-[10px] font-bold tracking-wider px-2 py-0.5 border-transparent uppercase",
+                            result.platform === 'tiktok' && "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900",
+                            result.platform === 'youtube' && "bg-red-600 text-white",
+                            result.platform === 'instagram' && "bg-gradient-to-r from-purple-500 to-pink-500 text-white",
+                            result.platform === 'facebook' && "bg-blue-600 text-white"
+                          )}
+                        >
+                          {result.platform}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
                   
@@ -210,23 +236,25 @@ export default function Home() {
                     {result.title}
                   </h2>
                   
-                  <div className="grid grid-cols-3 gap-4 mb-8">
-                    <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center justify-center border border-border/50">
-                      <Heart className="w-5 h-5 text-rose-500 mb-2" />
-                      <span className="font-bold text-lg">{formatNumber(result.likes)}</span>
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Likes</span>
+                  {(result.likes != null || result.comments != null || result.shares != null) && (
+                    <div className="grid grid-cols-3 gap-4 mb-8">
+                      <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center justify-center border border-border/50">
+                        <Heart className="w-5 h-5 text-rose-500 mb-2" />
+                        <span className="font-bold text-lg">{formatNumber(result.likes)}</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Likes</span>
+                      </div>
+                      <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center justify-center border border-border/50">
+                        <MessageCircle className="w-5 h-5 text-blue-400 mb-2" />
+                        <span className="font-bold text-lg">{formatNumber(result.comments)}</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Comments</span>
+                      </div>
+                      <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center justify-center border border-border/50">
+                        <Share2 className="w-5 h-5 text-emerald-400 mb-2" />
+                        <span className="font-bold text-lg">{formatNumber(result.shares)}</span>
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Shares</span>
+                      </div>
                     </div>
-                    <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center justify-center border border-border/50">
-                      <MessageCircle className="w-5 h-5 text-blue-400 mb-2" />
-                      <span className="font-bold text-lg">{formatNumber(result.comments)}</span>
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Comments</span>
-                    </div>
-                    <div className="bg-secondary/50 rounded-xl p-4 flex flex-col items-center justify-center border border-border/50">
-                      <Share2 className="w-5 h-5 text-emerald-400 mb-2" />
-                      <span className="font-bold text-lg">{formatNumber(result.shares)}</span>
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider mt-1">Shares</span>
-                    </div>
-                  </div>
+                  )}
                   
                   <div className="mt-auto space-y-4">
                     <Button 
@@ -274,14 +302,34 @@ export default function Home() {
                   onClick={() => handleDownload(item)}
                   data-testid={`card-history-${item.id}`}
                 >
-                  <img src={item.cover} alt={item.title} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
+                  {item.cover ? (
+                    <img src={item.cover} alt={item.title} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
+                  ) : (
+                    <div className="w-full h-full bg-zinc-900 flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity">
+                      <ImageIcon className="w-8 h-8 text-zinc-700" />
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent" />
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-sm">
                     <Download className="w-8 h-8 text-white drop-shadow-md" />
                   </div>
                   <div className="absolute bottom-3 left-3 right-3">
                     <p className="text-xs font-medium text-white line-clamp-2 drop-shadow-md">{item.title}</p>
-                    <p className="text-[10px] text-white/70 mt-1 truncate">@{item.author}</p>
+                    <div className="flex items-center justify-between mt-1 gap-1">
+                      <p className="text-[10px] text-white/70 truncate">@{item.author}</p>
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-[8px] font-bold tracking-wider px-1 py-0 h-3 border-transparent uppercase shrink-0",
+                          item.platform === 'tiktok' && "bg-zinc-900 text-white",
+                          item.platform === 'youtube' && "bg-red-600 text-white",
+                          item.platform === 'instagram' && "bg-gradient-to-r from-purple-500 to-pink-500 text-white",
+                          item.platform === 'facebook' && "bg-blue-600 text-white"
+                        )}
+                      >
+                        {item.platform === "instagram" ? "IG" : item.platform === "facebook" ? "FB" : item.platform === "youtube" ? "YT" : "TT"}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               ))}

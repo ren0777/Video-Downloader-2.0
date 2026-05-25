@@ -5,24 +5,7 @@
  * Multi-platform HD Video Downloader API
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
-
-export interface VideoInput {
-  /** Video URL (TikTok, YouTube, Instagram, or Facebook) */
-  url: string;
-}
-
-export type VideoResultPlatform = typeof VideoResultPlatform[keyof typeof VideoResultPlatform];
-
-
-export const VideoResultPlatform = {
-  tiktok: 'tiktok',
-  youtube: 'youtube',
-  instagram: 'instagram',
-  facebook: 'facebook',
-} as const;
+import type { VideoResultPlatform } from './videoResultPlatform';
 
 export interface VideoResult {
   id: string;
@@ -39,8 +22,3 @@ export interface VideoResult {
   comments?: number | null;
   shares?: number | null;
 }
-
-export interface ErrorResponse {
-  error: string;
-}
-
