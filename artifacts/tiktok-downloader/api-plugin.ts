@@ -94,10 +94,19 @@ async function fetchYoutube(url: string) {
   const info = await ytdl.default.getInfo(url);
   const details = info.videoDetails;
 
-  const format = ytdl.default.chooseFormat(info.formats, {
-    quality: "highestvideo",
-    filter: "videoandaudio",
-  });
+  // Try progressively looser format criteria until one works
+  let format =
+    ytdl.default.chooseFormat(info.formats, { quality: "highestvideo", filter: "videoandaudio" }) ||
+    ytdl.default.chooseFormat(info.formats, { quality: "highest", filter: "videoandaudio" }) ||
+    ytdl.default.chooseFormat(info.formats, { filter: "videoandaudio" }) ||
+    ytdl.default.chooseFormat(info.formats, { quality: "highestvideo" }) ||
+    ytdl.default.chooseFormat(info.formats, { quality: "highest" }) ||
+    info.formats.find((f) => f.url) ||
+    null;
+
+  if (!format?.url) {
+    throw new Error("Could not find a downloadable format for this YouTube video.");
+  }
 
   const cover =
     details.thumbnails?.sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url ?? null;
@@ -108,7 +117,7 @@ async function fetchYoutube(url: string) {
     author: details.author?.name || "Unknown",
     authorAvatar: null as null,
     cover,
-    downloadUrl: format?.url || "",
+    downloadUrl: format.url,
     duration: parseInt(details.lengthSeconds, 10) || 0,
     platform: "youtube" as Platform,
     likes: null as null,
