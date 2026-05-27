@@ -89,36 +89,86 @@ async function fetchTiktok(url: string) {
   };
 }
 
-async function fetchYoutube(url: string) {
-  const ytdl = await import("@distube/ytdl-core");
-  const info = await ytdl.default.getInfo(url);
-  const details = info.videoDetails;
-
-  // Try progressively looser format criteria until one works
-  let format =
-    ytdl.default.chooseFormat(info.formats, { quality: "highestvideo", filter: "videoandaudio" }) ||
-    ytdl.default.chooseFormat(info.formats, { quality: "highest", filter: "videoandaudio" }) ||
-    ytdl.default.chooseFormat(info.formats, { filter: "videoandaudio" }) ||
-    ytdl.default.chooseFormat(info.formats, { quality: "highestvideo" }) ||
-    ytdl.default.chooseFormat(info.formats, { quality: "highest" }) ||
-    info.formats.find((f) => f.url) ||
-    null;
-
-  if (!format?.url) {
-    throw new Error("Could not find a downloadable format for this YouTube video.");
+function extractYouTubeId(url: string): string | null {
+  const patterns = [
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /embed\/([a-zA-Z0-9_-]{11})/,
+    /shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
   }
+  return null;
+}
+
+async function fetchYoutube(url: string) {
+  const videoId = extractYouTubeId(url);
+  if (!videoId) throw new Error("Could not extract YouTube video ID from the URL.");
+
+  const { Innertube, Platform } = await import("youtubei.js");
+  const vm = await import("node:vm");
+
+  // Provide a Node.js evaluator for youtubei.js to decipher cipher-signed URLs.
+  // The generated script ends with a top-level `return process(...)` — valid only
+  // inside a function body, which is exactly what `new Function(code)` creates.
+  // eslint-disable-next-line no-new-func
+  Platform.shim.eval = (data: { output: string }, _evalArgs: Record<string, unknown>) => {
+    try {
+      // new Function wraps the code in "function anonymous() { <code> }"
+      // so the top-level `return` in the appended processor fn is allowed.
+      const fn = new Function(data.output);
+      return fn();
+    } catch (e) {
+      console.error("[player-eval] error:", e);
+      throw e;
+    }
+  };
+
+  // retrieve_player=true downloads the JS player needed to decipher cipher URLs
+  const yt = await Innertube.create({ retrieve_player: true });
+
+  const info = await yt.getInfo(videoId);
+  const details = info.basic_info;
+  const streamingData = info.streaming_data;
+
+  if (!streamingData) throw new Error("No streaming data available for this video.");
+
+  const allFormats = [
+    ...(streamingData.formats ?? []),
+    ...(streamingData.adaptive_formats ?? []),
+  ];
+
+  if (allFormats.length === 0) throw new Error("No formats returned for this video.");
+
+  // Sort muxed (video+audio) formats by resolution, fall back to any format
+  // NOTE: do NOT filter on f.url — cipher formats have url=null until decipher() is called
+  const muxed = allFormats
+    .filter((f) => f.has_video && f.has_audio)
+    .sort((a, b) => (b.width ?? 0) - (a.width ?? 0));
+
+  const chosen = muxed[0] ?? allFormats[0];
+
+  // decipher() handles both pre-signed URLs (returns url directly)
+  // and cipher-signed URLs (applies the JS player decipher transform)
+  const downloadUrl = await chosen.decipher(yt.session.player);
+
+  if (!downloadUrl) throw new Error("Could not generate a playable URL for this video.");
 
   const cover =
-    details.thumbnails?.sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url ?? null;
+    details.thumbnail
+      ?.sort((a: { width?: number }, b: { width?: number }) => (b.width ?? 0) - (a.width ?? 0))[0]?.url
+    ?? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
   return {
-    id: details.videoId,
+    id: videoId,
     title: details.title || "YouTube Video",
-    author: details.author?.name || "Unknown",
+    author: details.author || "Unknown",
     authorAvatar: null as null,
     cover,
-    downloadUrl: format.url,
-    duration: parseInt(details.lengthSeconds, 10) || 0,
+    downloadUrl,
+    duration: details.duration ?? 0,
     platform: "youtube" as Platform,
     likes: null as null,
     comments: null as null,
@@ -161,8 +211,8 @@ export function apiPlugin(): Plugin {
 
             return sendJson(res, 200, videoData);
           } catch (err) {
-            const message = err instanceof Error ? err.message : "An unexpected error occurred";
-            console.error("[api-plugin] error:", message);
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("[api-plugin] error:", err);
             return sendJson(res, 500, { error: message });
           }
         }
