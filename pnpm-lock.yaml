@@ -403,6 +403,10 @@ importers:
         version: 3.25.76
 
   artifacts/tiktok-downloader:
+    dependencies:
+      '@distube/ytdl-core':
+        specifier: ^4.16.12
+        version: 4.16.12
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0
