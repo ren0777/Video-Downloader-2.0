@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useDownloadVideo } from "@workspace/api-client-react";
+import { useMutation } from "@tanstack/react-query";
 import type { VideoResult } from "@workspace/api-client-react/src/generated/api.schemas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,7 +161,18 @@ export default function Home() {
   const [urlError, setUrlError] = useState("");
   const { toast } = useToast();
 
-  const downloadMutation = useDownloadVideo();
+  const downloadMutation = useMutation({
+    mutationFn: async (url: string): Promise<VideoResult> => {
+      const res = await fetch("/vid/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      return data as VideoResult;
+    },
+  });
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -194,26 +205,22 @@ export default function Home() {
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     setUrlError("");
     setResult(null);
-    downloadMutation.mutate(
-      { data: { url: values.url } },
-      {
-        onSuccess: (data) => {
-          setResult(data);
-          addToHistory(data);
-        },
-        onError: (error: any) => {
-          const message =
-            error?.data?.error ||
-            error?.message ||
-            "Failed to fetch video details. Please try again.";
-          toast({
-            title: "Download Failed",
-            description: message,
-            variant: "destructive",
-          });
-        },
-      }
-    );
+    downloadMutation.mutate(values.url, {
+      onSuccess: (data) => {
+        setResult(data);
+        addToHistory(data);
+      },
+      onError: (error: any) => {
+        const message =
+          error?.message ||
+          "Failed to fetch video details. Please try again.";
+        toast({
+          title: "Download Failed",
+          description: message,
+          variant: "destructive",
+        });
+      },
+    });
   };
 
   const handleReset = () => {

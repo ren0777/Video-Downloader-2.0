@@ -123,7 +123,7 @@ export function apiPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split("?")[0];
-        if (url === "/api/video/download" && req.method === "POST") {
+        if (url === "/vid/download" && req.method === "POST") {
           try {
             const body = await readBody(req);
             const { url: videoUrl } =
