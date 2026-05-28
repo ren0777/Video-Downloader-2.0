@@ -10,15 +10,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
+    "@renpwn/fb-downloader": "^1.0.16",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
     "express": "^5.2.1",
+    "instagram-url-direct": "^2.0.7",
     "pino": "^9.14.0",
-    "pino-http": "^10.5.0"
+    "pino-http": "^10.5.0",
+    "youtubei.js": "^17.0.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

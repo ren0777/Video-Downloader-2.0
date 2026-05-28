@@ -47,3 +47,18 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.replit
+.replitignore
+attached_assets/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Agent/AI tooling
+.agents/
+.gemini/
+
+# youtubei.js player cache (large ~2.5MB files)
+*-player-script.js

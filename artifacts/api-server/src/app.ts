@@ -30,5 +30,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+app.use("/vid", router);
 
 export default app;

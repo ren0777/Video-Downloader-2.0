@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
-import type { VideoResult } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { VideoResult } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Download, Search, RefreshCw, PlayCircle, Heart, MessageCircle, Share2, Clock, Trash2, Image as ImageIcon, Zap, Shield, Sparkles } from "lucide-react";
@@ -155,15 +155,89 @@ function TiltCard({ children, className }: { children: React.ReactNode; classNam
   );
 }
 
+function VideoResultSkeleton() {
+  return (
+    <div className="w-full max-w-3xl mb-20 animate-pulse duration-1000">
+      <div
+        className="relative rounded-3xl overflow-hidden border border-white/5"
+        style={{
+          background: "linear-gradient(135deg, rgba(15,12,30,0.6) 0%, rgba(10,8,25,0.6) 100%)",
+          boxShadow: "0 0 40px rgba(124,58,237,0.05), 0 25px 60px rgba(0,0,0,0.4)",
+          backdropFilter: "blur(20px)",
+        }}
+      >
+        <div className="md:flex">
+          {/* Cover skeleton */}
+          <div className="md:w-[45%] relative aspect-[9/16] md:aspect-auto min-h-[350px] bg-white/5 flex items-center justify-center">
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/10 pointer-events-none" />
+            <ImageIcon className="w-16 h-16 text-white/5" />
+          </div>
+
+          {/* Info skeleton */}
+          <div className="md:w-[55%] p-7 md:p-10 flex flex-col justify-between">
+            <div>
+              {/* Creator row skeleton */}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="h-11 w-11 rounded-full bg-white/5" />
+                <div className="space-y-2">
+                  <div className="h-3 w-12 rounded bg-white/5" />
+                  <div className="h-4 w-28 rounded bg-white/10" />
+                </div>
+              </div>
+
+              {/* Title lines skeleton */}
+              <div className="space-y-3 mb-8">
+                <div className="h-5 w-full rounded bg-white/10" />
+                <div className="h-5 w-[90%] rounded bg-white/10" />
+                <div className="h-5 w-[60%] rounded bg-white/5" />
+              </div>
+
+              {/* Stats block skeleton */}
+              <div className="grid grid-cols-3 gap-3 mb-8">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl p-4 flex flex-col items-center border border-white/5"
+                    style={{ background: "rgba(255,255,255,0.02)" }}
+                  >
+                    <div className="h-4 w-4 rounded-full bg-white/5 mb-2" />
+                    <div className="h-5 w-10 rounded bg-white/10 mb-1" />
+                    <div className="h-2.5 w-8 rounded bg-white/5" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Buttons skeleton */}
+            <div className="space-y-3 mt-auto">
+              <div className="w-full h-14 rounded-2xl bg-white/10" />
+              <div className="w-full h-14 rounded-2xl bg-white/5" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [result, setResult] = useState<VideoResult | null>(null);
   const [history, setHistory] = useState<VideoResult[]>([]);
   const [urlError, setUrlError] = useState("");
+  const [activePlatform, setActivePlatform] = useState<"all" | "tiktok" | "youtube" | "instagram" | "facebook">("all");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadSpeed, setDownloadSpeed] = useState("");
+  const [downloadedSize, setDownloadedSize] = useState("");
   const { toast } = useToast();
+
+  const API_BASE_URL = import.meta.env.DEV
+    ? ""
+    : (import.meta.env.VITE_API_URL || "https://tiktok-video-downloader-9bem.onrender.com").replace(/\/+$/, "");
 
   const downloadMutation = useMutation({
     mutationFn: async (url: string): Promise<VideoResult> => {
-      const res = await fetch("/vid/download", {
+      const res = await fetch(`${API_BASE_URL}/vid/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -229,8 +303,124 @@ export default function Home() {
     form.reset();
   };
 
-  const handleDownload = (video: VideoResult) => {
-    window.open(video.downloadUrl, "_blank");
+  const getOriginalUrl = (video: VideoResult) => {
+    if (video.platform === "youtube") {
+      return `https://www.youtube.com/watch?v=${video.id}`;
+    }
+    if (video.platform === "tiktok") {
+      return `https://www.tiktok.com/video/${video.id}`;
+    }
+    if (video.platform === "instagram") {
+      return `https://www.instagram.com/reel/${video.id}/`;
+    }
+    if (video.platform === "facebook") {
+      return `https://www.facebook.com/watch/?v=${video.id}`;
+    }
+    return video.downloadUrl;
+  };
+
+  const handleDownload = async (video: VideoResult) => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setDownloadSpeed("Connecting...");
+    setDownloadedSize("");
+
+    try {
+      const originalUrl = getOriginalUrl(video);
+      const streamUrl = `${API_BASE_URL}/vid/stream?url=${encodeURIComponent(originalUrl)}`;
+      
+      const response = await fetch(streamUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download stream: HTTP ${response.status}`);
+      }
+
+      const contentLengthHeader = response.headers.get("Content-Length");
+      const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+      
+      if (!response.body) {
+        throw new Error("Response body is not readable");
+      }
+
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let receivedBytes = 0;
+      const startTime = Date.now();
+      let lastUpdate = startTime;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        if (value) {
+          chunks.push(value);
+          receivedBytes += value.length;
+        }
+
+        const now = Date.now();
+        // Calculate progress percentage
+        if (totalBytes > 0) {
+          const pct = Math.round((receivedBytes / totalBytes) * 100);
+          setDownloadProgress(pct);
+
+          const receivedMB = (receivedBytes / (1024 * 1024)).toFixed(1);
+          const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+          setDownloadedSize(`${receivedMB} MB / ${totalMB} MB`);
+        } else {
+          const receivedMB = (receivedBytes / (1024 * 1024)).toFixed(1);
+          setDownloadedSize(`${receivedMB} MB`);
+        }
+
+        // Calculate speed over a sliding interval or since start
+        if (now - lastUpdate > 300 || receivedBytes === totalBytes) {
+          const elapsedSec = (now - startTime) / 1000;
+          if (elapsedSec > 0) {
+            const speedBytesPerSec = receivedBytes / elapsedSec;
+            if (speedBytesPerSec > 1024 * 1024) {
+              setDownloadSpeed(`${(speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`);
+            } else {
+              setDownloadSpeed(`${(speedBytesPerSec / 1024).toFixed(0)} KB/s`);
+            }
+          }
+          lastUpdate = now;
+        }
+      }
+
+      // Combine chunks into a single Blob
+      const blob = new Blob(chunks as any, { type: "video/mp4" });
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Trigger browser download
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      const safeTitle = video.title.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "_");
+      a.download = `${safeTitle}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      // Revoke the blob URL after a short timeout to release memory
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 5000);
+
+      toast({
+        title: "Download Complete",
+        description: `Successfully downloaded "${video.title}"`,
+      });
+    } catch (error: any) {
+      console.error("Progress download failed:", error);
+      toast({
+        title: "Download Failed",
+        description: error.message || "Failed to download the video stream.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
+      setDownloadProgress(0);
+      setDownloadSpeed("");
+      setDownloadedSize("");
+    }
   };
 
   const watchUrlErrors = form.formState.errors.url?.message;
@@ -279,18 +469,24 @@ export default function Home() {
           {/* Platform badges */}
           <div className="flex items-center justify-center gap-3 flex-wrap mb-16">
             {[
-              { label: "TikTok", color: "bg-white/10 border-white/20" },
-              { label: "YouTube", color: "bg-red-500/20 border-red-500/30" },
-              { label: "Instagram", color: "bg-pink-500/20 border-pink-500/30" },
-              { label: "Facebook", color: "bg-blue-500/20 border-blue-500/30" },
+              { id: "all", label: "All Platforms", color: "bg-white/5 border-white/10 hover:bg-white/10", activeColor: "bg-purple-600/30 border-purple-500 text-purple-200" },
+              { id: "tiktok", label: "TikTok", color: "bg-zinc-900/40 border-zinc-800 hover:bg-zinc-950/60", activeColor: "bg-white/15 border-white text-white shadow-[0_0_15px_rgba(255,255,255,0.1)]" },
+              { id: "youtube", label: "YouTube", color: "bg-red-950/20 border-red-900/30 hover:bg-red-950/40", activeColor: "bg-red-500/25 border-red-500 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.2)]" },
+              { id: "instagram", label: "Instagram", color: "bg-pink-950/20 border-pink-900/30 hover:bg-pink-950/40", activeColor: "bg-pink-500/25 border-pink-500 text-pink-200 shadow-[0_0_15px_rgba(236,72,153,0.2)]" },
+              { id: "facebook", label: "Facebook", color: "bg-blue-950/20 border-blue-900/30 hover:bg-blue-950/40", activeColor: "bg-blue-500/25 border-blue-500 text-blue-200 shadow-[0_0_15px_rgba(59,130,246,0.2)]" },
             ].map((p, i) => (
-              <span
-                key={p.label}
-                className={cn("px-4 py-1.5 rounded-full border text-sm font-medium text-white/70 backdrop-blur-sm badge-float", p.color)}
-                style={{ animationDelay: `${i * 0.15}s` }}
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setActivePlatform(p.id as any)}
+                className={cn(
+                  "px-4 py-1.5 rounded-full border text-sm font-semibold transition-all backdrop-blur-sm cursor-pointer select-none active:scale-95",
+                  activePlatform === p.id ? p.activeColor : p.color
+                )}
+                style={{ transition: "all 0.2s" }}
               >
                 {p.label}
-              </span>
+              </button>
             ))}
           </div>
         </div>
@@ -319,7 +515,17 @@ export default function Home() {
                           <FormItem className="flex-1">
                             <FormControl>
                               <input
-                                placeholder="Paste a TikTok or YouTube link..."
+                                placeholder={
+                                  activePlatform === "tiktok"
+                                    ? "Paste a TikTok video or VM link..."
+                                    : activePlatform === "youtube"
+                                    ? "Paste a YouTube video, Short, or watch link..."
+                                    : activePlatform === "instagram"
+                                    ? "Paste an Instagram post or reel link..."
+                                    : activePlatform === "facebook"
+                                    ? "Paste a Facebook video, reel, or watch link..."
+                                    : "Paste a TikTok, YouTube, Instagram, or Facebook link..."
+                                }
                                 className="w-full bg-transparent border-none outline-none text-white placeholder:text-white/25 px-4 py-5 text-base"
                                 autoComplete="off"
                                 {...field}
@@ -331,7 +537,7 @@ export default function Home() {
                       <div className="flex-shrink-0 pr-2">
                         <button
                           type="submit"
-                          disabled={downloadMutation.isPending}
+                          disabled={downloadMutation.isPending || isDownloading}
                           className="relative overflow-hidden px-7 py-3.5 rounded-xl font-semibold text-white text-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all active:scale-95"
                           style={{
                             background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
@@ -379,6 +585,9 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Loading Skeleton */}
+        {downloadMutation.isPending && <VideoResultSkeleton />}
 
         {/* Result Card */}
         {result && (
@@ -471,23 +680,52 @@ export default function Home() {
                   )}
 
                   <div className="mt-auto space-y-3">
+                    {isDownloading ? (
+                      <div className="space-y-3.5 p-5 rounded-2xl border border-purple-500/30 bg-purple-950/20 backdrop-blur-xl relative overflow-hidden shadow-[0_0_30px_rgba(139,92,246,0.1)] animate-in fade-in zoom-in-95 duration-300">
+                        {/* Top glow line */}
+                        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-purple-500/50 to-transparent" />
+                        
+                        <div className="flex justify-between items-center text-sm font-semibold">
+                          <span className="flex items-center gap-2 text-purple-300">
+                            <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                            Downloading HD Video...
+                          </span>
+                          <span className="text-purple-400 font-bold tracking-wider">{downloadProgress}%</span>
+                        </div>
+
+                        {/* Progress bar container */}
+                        <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5 relative">
+                          <div 
+                            className="h-full rounded-full transition-all duration-300 ease-out bg-gradient-to-r from-purple-500 via-violet-500 to-indigo-500 shadow-[0_0_12px_rgba(139,92,246,0.6)]"
+                            style={{ width: `${downloadProgress}%` }}
+                          />
+                        </div>
+
+                        <div className="flex justify-between items-center text-xs text-white/40">
+                          <span>{downloadedSize}</span>
+                          <span className="font-mono bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 text-purple-300">{downloadSpeed}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] relative overflow-hidden"
+                        style={{
+                          background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                          boxShadow: "0 0 30px rgba(124,58,237,0.4), 0 8px 20px rgba(0,0,0,0.3)",
+                        }}
+                        onClick={() => handleDownload(result)}
+                        data-testid="button-download"
+                      >
+                        <span className="shimmer-overlay" />
+                        <Download className="w-5 h-5" />
+                        Download HD Video
+                      </button>
+                    )}
                     <button
-                      className="w-full py-4 rounded-2xl font-bold text-white text-base flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] relative overflow-hidden"
-                      style={{
-                        background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                        boxShadow: "0 0 30px rgba(124,58,237,0.4), 0 8px 20px rgba(0,0,0,0.3)",
-                      }}
-                      onClick={() => handleDownload(result)}
-                      data-testid="button-download"
-                    >
-                      <span className="shimmer-overlay" />
-                      <Download className="w-5 h-5" />
-                      Download HD Video
-                    </button>
-                    <button
-                      className="w-full py-4 rounded-2xl font-semibold text-white/50 hover:text-white/80 text-sm flex items-center justify-center gap-2 transition-colors border border-white/5 hover:border-white/10"
+                      className="w-full py-4 rounded-2xl font-semibold text-white/50 hover:text-white/80 disabled:hover:text-white/50 text-sm flex items-center justify-center gap-2 transition-colors border border-white/5 hover:border-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ background: "rgba(255,255,255,0.03)" }}
                       onClick={handleReset}
+                      disabled={isDownloading}
                       data-testid="button-reset"
                     >
                       <RefreshCw className="w-4 h-4" />
