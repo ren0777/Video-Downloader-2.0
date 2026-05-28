@@ -219,6 +219,64 @@ async function fetchInstagram(url: string) {
   }
 }
 
+async function fetchCobaltFallback(url: string, platform: Platform) {
+  try {
+    const response = await fetch("https://api.cobalt.tools/api/json", {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+      body: JSON.stringify({
+        url: url,
+        vQuality: "720",
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Engine HTTP status: ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      status: string;
+      url?: string;
+      text?: string;
+      picker?: Array<{ url: string; type?: string }>;
+    };
+
+    if (data.status === "error") {
+      throw new Error(data.text || "Cobalt error");
+    }
+
+    let downloadUrl = data.url || "";
+    if (data.status === "picker" && data.picker && data.picker.length > 0) {
+      downloadUrl = data.picker[0].url;
+    }
+
+    if (!downloadUrl) {
+      throw new Error("No download URL returned");
+    }
+
+    return {
+      id: "fallback_" + Date.now(),
+      title: `${platform.toUpperCase()} Video (Fallback)`,
+      author: `${platform.toUpperCase()} Creator`,
+      authorAvatar: null,
+      cover: null,
+      downloadUrl: downloadUrl,
+      duration: 0,
+      platform: platform,
+      likes: null,
+      comments: null,
+      shares: null,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unexpected fallback error";
+    throw new Error(`Primary method failed, and fallback engine also failed: ${msg}`);
+  }
+}
+
 // REST route to trigger file downloading with Express serving as the stream proxy
 router.get(["/video/stream", "/stream"], async (req, res): Promise<void> => {
   const { url } = req.query;
@@ -354,9 +412,38 @@ router.get(["/video/stream", "/stream"], async (req, res): Promise<void> => {
       res.status(500).json({ error: "No stream body found." });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "An unexpected error occurred";
-    req.log.error({ err }, "Stream download failed");
-    res.status(500).json({ error: message });
+    req.log.warn({ err }, "Primary stream failed, attempting Cobalt fallback stream");
+    try {
+      const fallbackData = await fetchCobaltFallback(url, platform);
+      const response = await fetch(fallbackData.downloadUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+      });
+      if (!response.ok) throw new Error("Failed to fetch stream from fallback engine.");
+
+      const safeTitle = fallbackData.title.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "_");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeTitle}.mp4"`);
+      res.setHeader("Content-Type", "video/mp4");
+
+      const contentLength = response.headers.get("content-length");
+      if (contentLength) {
+        res.setHeader("Content-Length", contentLength);
+      }
+
+      if (response.body) {
+        const readable = Readable.fromWeb(response.body as any);
+        req.on("close", () => {
+          readable.destroy();
+        });
+        readable.pipe(res);
+        return;
+      }
+    } catch (fallbackErr) {
+      const message = err instanceof Error ? err.message : "An unexpected error occurred";
+      req.log.error({ err: fallbackErr }, "Stream download fallback also failed");
+      res.status(500).json({ error: message });
+    }
   }
 });
 
@@ -422,13 +509,33 @@ router.post(["/video/download", "/download"], async (req, res): Promise<void> =>
   try {
     let videoData;
     if (platform === "tiktok") {
-      videoData = await fetchTiktok(url);
+      try {
+        videoData = await fetchTiktok(url);
+      } catch (err) {
+        req.log.warn({ err }, "Direct TikTok download failed, trying Cobalt fallback");
+        videoData = await fetchCobaltFallback(url, "tiktok");
+      }
     } else if (platform === "facebook") {
-      videoData = await fetchFacebook(url);
+      try {
+        videoData = await fetchFacebook(url);
+      } catch (err) {
+        req.log.warn({ err }, "Direct Facebook download failed, trying Cobalt fallback");
+        videoData = await fetchCobaltFallback(url, "facebook");
+      }
     } else if (platform === "instagram") {
-      videoData = await fetchInstagram(url);
+      try {
+        videoData = await fetchInstagram(url);
+      } catch (err) {
+        req.log.warn({ err }, "Direct Instagram download failed, trying Cobalt fallback");
+        videoData = await fetchCobaltFallback(url, "instagram");
+      }
     } else {
-      videoData = await fetchYoutube(url);
+      try {
+        videoData = await fetchYoutube(url);
+      } catch (err) {
+        req.log.warn({ err }, "Direct YouTube download failed, trying Cobalt fallback");
+        videoData = await fetchCobaltFallback(url, "youtube");
+      }
     }
 
     // 2. Cache the fetched metadata in database (fail-safe)
