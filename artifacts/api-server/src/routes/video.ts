@@ -219,63 +219,79 @@ async function fetchInstagram(url: string) {
   }
 }
 
+const COBALT_INSTANCES = [
+  "https://api.cobalt.tools",
+  "https://cobalt.api.ryz.cx",
+  "https://cobalt.hyper.lol",
+  "https://api.smooth.yt"
+];
+
 async function fetchCobaltFallback(url: string, platform: Platform) {
-  try {
-    const response = await fetch("https://api.cobalt.tools/api/json", {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      body: JSON.stringify({
-        url: url,
-        vQuality: "720",
-      }),
-    });
+  let lastError: any = null;
 
-    if (!response.ok) {
-      throw new Error(`Engine HTTP status: ${response.status}`);
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      console.log(`[Cobalt] Attempting fallback extraction using instance: ${instance}`);
+      const response = await fetch(instance, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        body: JSON.stringify({
+          url: url,
+          videoQuality: "720",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP status: ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        status: string;
+        url?: string;
+        text?: string;
+        picker?: Array<{ url: string; type?: string }>;
+      };
+
+      if (data.status === "error") {
+        throw new Error(data.text || "Cobalt error");
+      }
+
+      let downloadUrl = data.url || "";
+      if (data.status === "picker" && data.picker && data.picker.length > 0) {
+        downloadUrl = data.picker[0].url;
+      }
+
+      if (!downloadUrl) {
+        throw new Error("No download URL returned");
+      }
+
+      return {
+        id: "fallback_" + Date.now(),
+        title: `${platform.toUpperCase()} Video (Fallback)`,
+        author: `${platform.toUpperCase()} Creator`,
+        authorAvatar: null,
+        cover: null,
+        downloadUrl: downloadUrl,
+        duration: 0,
+        platform: platform,
+        likes: null,
+        comments: null,
+        shares: null,
+      };
+    } catch (err) {
+      console.warn(`[Cobalt] Instance ${instance} failed:`, err);
+      lastError = err;
     }
-
-    const data = (await response.json()) as {
-      status: string;
-      url?: string;
-      text?: string;
-      picker?: Array<{ url: string; type?: string }>;
-    };
-
-    if (data.status === "error") {
-      throw new Error(data.text || "Cobalt error");
-    }
-
-    let downloadUrl = data.url || "";
-    if (data.status === "picker" && data.picker && data.picker.length > 0) {
-      downloadUrl = data.picker[0].url;
-    }
-
-    if (!downloadUrl) {
-      throw new Error("No download URL returned");
-    }
-
-    return {
-      id: "fallback_" + Date.now(),
-      title: `${platform.toUpperCase()} Video (Fallback)`,
-      author: `${platform.toUpperCase()} Creator`,
-      authorAvatar: null,
-      cover: null,
-      downloadUrl: downloadUrl,
-      duration: 0,
-      platform: platform,
-      likes: null,
-      comments: null,
-      shares: null,
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unexpected fallback error";
-    throw new Error(`Primary method failed, and fallback engine also failed: ${msg}`);
   }
+
+  const msg = lastError instanceof Error ? lastError.message : "All fallback instances failed";
+  throw new Error(`Primary method failed, and all fallback engines failed: ${msg}`);
 }
+
 
 // REST route to trigger file downloading with Express serving as the stream proxy
 router.get(["/video/stream", "/stream"], async (req, res): Promise<void> => {
