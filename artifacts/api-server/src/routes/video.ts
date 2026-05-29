@@ -7,6 +7,9 @@ import { eq, and, gt } from "drizzle-orm";
 import { instagramGetUrl } from "instagram-url-direct";
 import getFBInfo from "@renpwn/fb-downloader";
 
+// Disable TLS verification to allow connection to community-maintained Cobalt mirrors with self-signed/expired SSL certificates.
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 // Provide a Node.js evaluator for youtubei.js to decipher cipher-signed URLs.
 YTPlatform.shim.eval = (data: { output: string }, _evalArgs: Record<string, unknown>) => {
   try {
@@ -220,10 +223,13 @@ async function fetchInstagram(url: string) {
 }
 
 const COBALT_INSTANCES = [
-  "https://api.cobalt.tools",
   "https://cobalt.api.ryz.cx",
-  "https://cobalt.hyper.lol",
-  "https://api.smooth.yt"
+  "https://api.cobalt.tools",
+  "https://cobalt.vin",
+  "https://cobalt.moe",
+  "https://cobalt.club",
+  "https://cobalt-api.kwiateq.net",
+  "https://cobalt.perennial.cam"
 ];
 
 async function fetchCobaltFallback(url: string, platform: Platform) {
